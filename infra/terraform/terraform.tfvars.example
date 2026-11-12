@@ -1,0 +1,5 @@
+aws_region               = "eu-west-1"
+project                  = "sentinelops"
+environment              = "sandbox"
+budget_monthly_limit     = 15
+budget_notification_email = "ilyesilyeshamdi10@gmail.com"

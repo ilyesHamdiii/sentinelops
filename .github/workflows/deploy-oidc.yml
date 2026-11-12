@@ -1,0 +1,66 @@
+name: sentinelops-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target AWS environment
+        required: true
+        default: sandbox
+        type: choice
+        options:
+          - sandbox
+      confirm_deploy:
+        description: Type yes to allow the OIDC deployment validation path
+        required: true
+        default: "no"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate-oidc:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'yes' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::960577828312:role/sentinelops-github-oidc-deploy
+          aws-region: eu-west-1
+          role-session-name: sentinelops-github-actions
+
+      - name: Validate AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Validate Terraform plan only
+        if: ${{ hashFiles('infra/terraform/**/*.tf') != '' }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform plan
+        if: ${{ hashFiles('infra/terraform/**/*.tf') != '' }}
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend=false
+          terraform plan -lock=false -input=false
+
+      - name: Stop if deployment is not explicitly approved
+        if: ${{ inputs.confirm_deploy != 'yes' }}
+        run: |
+          echo "Deployment must be explicitly approved before AWS access is granted."
+          exit 1

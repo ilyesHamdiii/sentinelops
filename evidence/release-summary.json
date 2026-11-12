@@ -1,0 +1,37 @@
+{
+  "project": "SentinelOps",
+  "status": "release-ready",
+  "phases_completed": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+  ],
+  "release_scope": [
+    "architecture and risk model",
+    "ingestion validation and normalization",
+    "deterministic scenario checks",
+    "approval-gated remediation",
+    "sanitized reporting",
+    "GitHub Actions CI hardening",
+    "OIDC-first deployment policy",
+    "operational runbooks and cost ledger"
+  ],
+  "budget_guardrail_usd_per_month": 15,
+  "active_aws_spend": 0,
+  "secret_free": true,
+  "verification": {
+    "pytest": "passed",
+    "ruff": "passed",
+    "mypy": "passed"
+  }
+}

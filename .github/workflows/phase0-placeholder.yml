@@ -1,0 +1,99 @@
+name: sentinelops-ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PYTHONUTF8: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      AWS_REGION: eu-west-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+
+      - name: Run Ruff
+        run: python -m ruff check src tests
+
+      - name: Run mypy
+        run: python -m mypy src
+
+      - name: Run pytest
+        run: python -m pytest -q
+
+      - name: Run Bandit
+        run: python -m bandit -r src -q
+
+      - name: Run pip-audit
+        run: python -m pip_audit
+
+      - name: Check Terraform formatting and validation
+        if: ${{ hashFiles('infra/terraform/**/*.tf') != '' }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Validate Terraform config
+        if: ${{ hashFiles('infra/terraform/**/*.tf') != '' }}
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+
+      - name: Fail on static AWS credentials in repo files
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          bad = re.compile(
+              r"(?:AKIA|ASIA)[A-Z0-9]{16}|aws_secret_access_key|aws_session_token|aws_access_key_id",
+              re.IGNORECASE,
+          )
+          excluded = {".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+          hits = []
+          roots = [Path("."), Path(".github"), Path("src"), Path("infra"), Path("scripts"), Path("tests")]
+
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  if any(part in excluded for part in path.parts):
+                      continue
+                  try:
+                      text = path.read_text(encoding="utf-8")
+                  except UnicodeDecodeError:
+                      continue
+                  if bad.search(text):
+                      hits.append(str(path))
+
+          if hits:
+              raise SystemExit(f"Static AWS secret patterns found in repository files: {sorted(hits)}")
+          print("No static AWS credential patterns detected in repository files.")
+          PY
