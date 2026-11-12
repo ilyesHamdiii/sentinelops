@@ -4,7 +4,7 @@
 
 - Hard monthly ceiling: `$15.00`
 - Budget alert thresholds: `$7.50`, `$12.00`, and `$15.00`
-- Region: `eu-east-1`
+- Region: `eu-west-1`
 - Account purpose: shared sandbox for SentinelOps and future cloud security/engineering work
 
 ## Budget logic

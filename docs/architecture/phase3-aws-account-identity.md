@@ -22,7 +22,7 @@ Use a dedicated AWS account for SentinelOps testing and validation, with no root
 
 - Account purpose: shared sandbox account for SentinelOps development and future cloud security/engineering projects; no production data.
 - Resource isolation: all SentinelOps resources must be tagged with `Project = "sentinelops"` and `Environment = "sandbox"`.
-- Region: `eu-east-1` for single-region deployment only.
+- Region: `eu-west-1` for single-region deployment only.
 - Budget ceiling: `$15/month` hard ceiling, with AWS Budget alerts at 50% ($7.50), 80% ($12.00), and 100% ($15.00).
 
 ## Account model
@@ -31,7 +31,7 @@ Use a dedicated AWS account for SentinelOps testing and validation, with no root
 
 - Account type: dedicated non-production security validation account.
 - Ownership: single accountable operator with security review and billing visibility.
-- Region policy: fixed primary region `eu-east-1`; no multi-region expansion during MVP.
+- Region policy: fixed primary region `eu-west-1`; no multi-region expansion during MVP.
 - Environment boundaries: sandbox-only workload; no production data or workloads on the same account.
 
 ### Identity principles

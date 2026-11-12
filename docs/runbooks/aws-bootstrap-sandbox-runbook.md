@@ -6,7 +6,7 @@ Prepare the SentinelOps sandbox account for future AWS validation work while sta
 
 - account purpose: shared sandbox for SentinelOps and future cloud security/engineering work
 - no production data
-- region: `eu-east-1`
+- region: `eu-west-1`
 - budget hard ceiling: `$15/month`
 - resource tags: `Project = "sentinelops"`, `Environment = "sandbox"`
 
@@ -32,7 +32,7 @@ This document is a planning and execution checklist, not a live action without e
 
 ## Region and account constraints
 
-- Primary region: `eu-east-1`.
+- Primary region: `eu-west-1`.
 - Single-region scope only during MVP.
 - Do not enable unrelated regions or services without documented cost review and user approval.
 
@@ -65,14 +65,14 @@ aws configure list --profile sentinelops-sandbox
 Verify:
 
 - account ID is the correct shared sandbox account,
-- region is `eu-east-1`,
+- region is `eu-west-1`,
 - the effective identity is not the root user.
 
 ### 2. Validate account metadata
 
 ```bash
 aws iam list-account-aliases --profile sentinelops-sandbox
-aws account list-regions --profile sentinelops-sandbox --query "Regions[?RegionName=='eu-east-1']"
+aws account list-regions --profile sentinelops-sandbox --query "Regions[?RegionName=='eu-west-1']"
 ```
 
 Check whether the account is still consistent with the sandbox-only scope.
@@ -153,7 +153,7 @@ If AWS service creation triggers spending beyond plan:
 This runbook is considered complete only when all of the following are true:
 
 - the user has approved the sandbox account purpose and budget,
-- the region is confirmed as `eu-east-1`,
+- the region is confirmed as `eu-west-1`,
 - budget alarms are configured and documented,
 - the bootstrap roles are least-privilege and not root-based,
 - and the tag policy is in place before any Terraform or AWS resource creation.

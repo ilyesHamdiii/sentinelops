@@ -8,8 +8,19 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 coverage.xml
 htmlcov/
+
+# Test, report, and local-run artifacts
+*.log
+*.tmp
+*.sqlite3
+*.db
+pip-audit-report.json
+report*.json
+reports/
 
 # IDE/editor
 .vscode/
