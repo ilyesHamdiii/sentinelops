@@ -1,0 +1,29 @@
+{
+  "S1": {
+    "scenario_id": "S1",
+    "status": "finding_detected",
+    "rationale": "Bucket is publicly readable or public access controls are not fully enforced.",
+    "expected_outcome": "finding_detected",
+    "title": "Public or unsafe S3 access",
+    "description": "Bucket is publicly readable or exposes unsafe public access policies.",
+    "policy_version": "1.0"
+  },
+  "S2": {
+    "scenario_id": "S2",
+    "status": "finding_detected",
+    "rationale": "Wildcard action grant; Wildcard resource grant",
+    "expected_outcome": "finding_detected",
+    "title": "Excessive IAM privileges",
+    "description": "Policy or trust document grants wildcard or privilege-escalation access.",
+    "policy_version": "1.0"
+  },
+  "S3": {
+    "scenario_id": "S3",
+    "status": "finding_detected",
+    "rationale": "Administrative ports 22/3389 are publicly exposed.",
+    "expected_outcome": "finding_detected",
+    "title": "Network exposure",
+    "description": "Public ingress to administrative services exposes the environment.",
+    "policy_version": "1.0"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "S1": {
+    "scenario_id": "S1",
+    "status": "no_finding_detected",
+    "rationale": "Temporary public S3 access was removed and the bucket was deleted after verification.",
+    "expected_outcome": "finding_detected",
+    "title": "Public or unsafe S3 access",
+    "description": "Bucket is publicly readable or exposes unsafe public access policies.",
+    "policy_version": "1.0"
+  },
+  "S2": {
+    "scenario_id": "S2",
+    "status": "no_finding_detected",
+    "rationale": "The temporary wildcard IAM demo role and inline policy were removed after validation.",
+    "expected_outcome": "finding_detected",
+    "title": "Excessive IAM privileges",
+    "description": "Policy or trust document grants wildcard or privilege-escalation access.",
+    "policy_version": "1.0"
+  },
+  "S3": {
+    "scenario_id": "S3",
+    "status": "no_finding_detected",
+    "rationale": "Temporary public SSH/RDP ingress was revoked and the security group was deleted after verification.",
+    "expected_outcome": "finding_detected",
+    "title": "Network exposure",
+    "description": "Public ingress to administrative services exposes the environment.",
+    "policy_version": "1.0"
+  },
+  "verification": {
+    "account_id": "960577828312",
+    "region": "eu-west-1",
+    "remediation_actions": [
+      "s3_block_public_access",
+      "security_group_restrict_ingress"
+    ],
+    "cleanup_actions": [
+      "delete_bucket_policy",
+      "delete_security_group",
+      "delete_demo_iam_role"
+    ],
+    "validation_at": "2026-11-13T10:49:00Z"
+  }
+}

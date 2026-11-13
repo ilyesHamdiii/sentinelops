@@ -37,6 +37,67 @@ def test_allowlisted_execution_succeeds_with_exact_hash_and_verification():
     assert result["state"] == "RESOLVED"
 
 
+def test_execution_requires_approval_before_action_is_allowed():
+    result = execute_remediation(
+        action=ApprovedRemediationAction.S3_BLOCK_PUBLIC_ACCESS,
+        target="arn:aws:s3:::approval-required-bucket",
+        reason="Remove public access after explicit review.",
+        approval={"approved": False, "hash": "", "state": "REJECTED"},
+        before_state={"public_access_block": False},
+        after_state={"public_access_block": True},
+        verification_passed=True,
+    )
+
+    assert result["status"] == "REJECTED"
+    assert result["state"] == "OPEN"
+    assert result["verification"]["passed"] is False
+
+
+def test_unapproved_request_is_rejected_before_any_execution():
+    approval = approve_remediation(
+        action=ApprovedRemediationAction.SECURITY_GROUP_RESTRICT_INGRESS,
+        target="sg-000000000000",
+        reason="Restrict public ingress.",
+        approved=False,
+    )
+
+    result = execute_remediation(
+        action=ApprovedRemediationAction.SECURITY_GROUP_RESTRICT_INGRESS,
+        target="sg-000000000000",
+        reason="Restrict public ingress.",
+        approval=approval,
+        before_state={"ingress": [{"CidrIp": "0.0.0.0/0", "FromPort": 22}]},
+        after_state={"ingress": [{"CidrIp": "10.0.0.0/8", "FromPort": 22}]},
+        verification_passed=True,
+    )
+
+    assert result["status"] == "REJECTED"
+    assert result["state"] == "OPEN"
+
+
+def test_fresh_verification_is_required_before_a_remediation_is_marked_successful():
+    approval = approve_remediation(
+        action=ApprovedRemediationAction.S3_BLOCK_PUBLIC_ACCESS,
+        target="arn:aws:s3:::verification-required-bucket",
+        reason="Close public access once the issue is cleared by fresh evidence.",
+    )
+
+    result = execute_remediation(
+        action=ApprovedRemediationAction.S3_BLOCK_PUBLIC_ACCESS,
+        target="arn:aws:s3:::verification-required-bucket",
+        reason="Close public access once the issue is cleared by fresh evidence.",
+        approval=approval,
+        before_state={"public_access_block": False},
+        after_state={"public_access_block": True},
+        verification_passed=True,
+        verification_result={"status": VerificationOutcome.NOT_RESOLVED},
+    )
+
+    assert result["status"] == "FAILED"
+    assert result["state"] == "OPEN"
+    assert result["verification"]["passed"] is False
+
+
 def test_approval_hash_mismatch_is_rejected():
     approval = approve_remediation(
         action=ApprovedRemediationAction.SECURITY_GROUP_RESTRICT_INGRESS,

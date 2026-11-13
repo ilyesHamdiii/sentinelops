@@ -136,6 +136,26 @@ guarantee of complete cloud security.
 Do not claim precision/recall unless the dataset and measurement method
 justify it. State dataset size and limitations.
 
+### Live AWS sandbox evidence (actual, not synthesized)
+
+The repository was exercised against a real AWS sandbox account on 2026-11-13 under explicit approval. The live findings were recorded in [evidence/live-discovery-2026-11-13.json](evidence/live-discovery-2026-11-13.json) and captured as:
+
+- S1: `finding_detected` for public or unsafe S3 access
+- S2: `finding_detected` for excessive IAM privileges
+- S3: `finding_detected` for public administrative ingress on SSH/RDP
+
+A controlled remediation and cleanup flow was then performed for the temporary public demo resources only. The resulting final state was recorded in [evidence/live-discovery-2026-11-13-post-remediation.json](evidence/live-discovery-2026-11-13-post-remediation.json) and reflects the post-cleanup result (`no_finding_detected`) for the temporary demo resources.
+
+This is distinct from the local automated test suite. Local tests prove the application logic, approval gate, replay prevention, and verification policy in a deterministic environment. The live AWS evidence proves actual account-state behavior under explicit sandbox conditions and must not be confused with synthetic test results.
+
+### Workflow provenance and ledger truth
+
+The project’s approval and session ledger were inspected to confirm the actual execution provenance. The `approval-ledger.sqlite3` file contains consumed approval hashes from the workflow, and `session-ledger.sqlite3` contains the `live-verify-s1-remediation` verification session. The live AWS mutations themselves were performed by direct AWS CLI / boto3 operations in the sandbox account, and the application workflow was then invoked to validate the result and record the ledger state. This distinction matters: the application workflow did not originate the live mutation; it validated and logged the post-change state.
+
+### Required governance for live execution
+
+Live AWS operations must remain narrow, approval-bound, and recovery-aware. No broad Terraform apply or destroy, no account-wide public access change, no unrelated resource deletion, and no unapproved cleanup are allowed.
+
 ------------------------------------------------------------------------
 
 # 2. Architecture

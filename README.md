@@ -6,7 +6,43 @@ SentinelOps is a headless AWS cloud security assessment and approval-gated remed
 
 The repository models a practical cloud security engineering workflow without relying on a browser UI. The application is intentionally kept headless: a Python backend and CLI-friendly workflow with FastAPI endpoints for local read-only inspection, a deterministic scenario engine, a risk engine, and an approval-based remediation and verification pipeline.
 
-This project is intentionally local-first and does not perform live AWS deployment or AWS mutation without explicit authorization. All validation in this workspace is synthetic and deterministic.
+This project is intentionally local-first, but it also includes a controlled live AWS sandbox validation path that was explicitly authorized and executed under strict scope. The local automated tests remain deterministic and synthetic, while the live AWS evidence is a separate record of actual account-state checks performed under the approved sandbox conditions.
+
+## Live AWS evidence and scope distinction
+
+The live AWS validation that occurred on 2026-11-13 was for the approved sandbox demo only and was intentionally limited to the temporary public S3 bucket, the temporary public security group, and the temporary wildcard IAM role created for that exact scenario.
+
+Actual findings observed before remediation:
+- S1: `finding_detected` for public or unsafe S3 access
+- S2: `finding_detected` for excessive IAM privileges
+- S3: `finding_detected` for public admin ingress on 22/3389
+
+Actual post-remediation and cleanup evidence:
+- S3 public access block: `BlockPublicAcls=true`, `IgnorePublicAcls=true`, `BlockPublicPolicy=true`, `RestrictPublicBuckets=true`
+- Security group `sg-080bf854cd7fbc613`: no remaining public ingress rules
+- Temporary demo bucket `sentinelops-demo-public-bucket-001`: removed
+- Temporary demo wildcard IAM role: removed
+- Persistent project roles `sentinelops-assessment` and `sentinelops-remediation`: still present
+
+Important distinction: the direct AWS mutation and cleanup were performed with AWS CLI / boto3 calls in the live account. The application workflow `execute_remediation` was then invoked to validate the state and consume approval/verification records, but it did not itself perform the live AWS mutation. The supporting ledger and session evidence shows that the workflow was used to record and validate the live remediation, not as the origin of the AWS-side changes.
+
+The recorded evidence is stored in:
+- [evidence/live-discovery-2026-11-13.json](evidence/live-discovery-2026-11-13.json)
+- [evidence/live-discovery-2026-11-13-post-remediation.json](evidence/live-discovery-2026-11-13-post-remediation.json)
+
+## AWS demonstration instructions
+
+A future AWS sandbox demonstration is deliberately blocked until explicit authorization. The repository supports a controlled runbook path, but no live AWS deployment, credential configuration, or Terraform apply is part of the default workspace validation.
+
+Before any live AWS use, the user must authorize:
+
+- target sandbox account,
+- region `eu-west-1`,
+- GitHub OIDC repo/environment trust,
+- cost ceiling and cleanup plan,
+- explicit deployment approval.
+
+The live AWS validation that was actually performed on 2026-11-13 was a controlled sandbox proof, not an unrestricted project deployment.
 
 ## Problem statement
 
