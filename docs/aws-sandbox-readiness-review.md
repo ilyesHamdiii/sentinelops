@@ -120,8 +120,15 @@ The GitHub Actions workflow in [.github/workflows/deploy-oidc.yml](../.github/wo
 - `aws-actions/configure-aws-credentials@v4`
 - `aws sts get-caller-identity` validation before any further steps
 - Terraform plan-only mode before a deployment is approved
+- exact role assumption to `arn:aws:iam::960577828312:role/sentinelops-github-oidc-deploy`
+- exact environment gating to GitHub environment `sandbox`
 
-The remaining requirement is to ensure the role trust policy is pinned to the exact repo, branch, and environment, and that the role scope does not allow broader deployments or admin-level access. For live validation, this must be checked in the sandbox account before any role assumption is used.
+The remaining requirement is to ensure the role trust policy in the sandbox account is pinned to the exact repo and environment subject:
+
+- `aud = sts.amazonaws.com`
+- `sub = repo:ilyesHamdiii/sentinelops:environment:sandbox`
+
+This must be checked in the sandbox account before any live AWS role assumption or deployment is attempted.
 
 ## 6. Live validation runbook
 

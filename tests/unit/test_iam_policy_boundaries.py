@@ -106,9 +106,13 @@ def test_github_oidc_trust_uses_repository_and_environment() -> None:
 def test_workflow_requires_oidc_permission_and_environment_gate() -> None:
     workflow = WORKFLOW_FILE.read_text(encoding="utf-8")
     assert "id-token: write" in workflow
-    assert "role-to-assume:" in workflow
-    assert "environment: ${{ inputs.environment }}" in workflow
+    assert "role-to-assume: arn:aws:iam::960577828312:role/sentinelops-github-oidc-deploy" in workflow
+    assert "environment: sandbox" in workflow
+    assert "inputs.environment == 'sandbox'" in workflow
     assert "confirm_deploy" in workflow
+    assert "terraform plan -lock=false -input=false -no-color" in workflow
+    assert "terraform apply" not in workflow
+    assert "terraform destroy" not in workflow
 
 
 def test_terraform_oidc_provider_uses_stable_github_thumbprint() -> None:
@@ -122,6 +126,10 @@ def test_no_unrestricted_service_wildcards_are_present_in_terraform_source() -> 
     terraform_text = TERRAFORM_FILE.read_text(encoding="utf-8")
     for wildcard in ("iam:*", "s3:*", "ec2:*", "logs:*", "cloudtrail:*", "budgets:*"):
         assert wildcard not in terraform_text
+
+    apply_policy = _extract_hcl_block('data "aws_iam_policy_document"', "github_apply_policy")
+    for forbidden in ("iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "cloudtrail:CreateTrail", "cloudtrail:DeleteTrail", "logs:CreateLogGroup", "s3:PutObject"):
+        assert forbidden not in apply_policy
 
 
 def _flatten_actions(statement: dict[str, object]) -> set[str]:

@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Target AWS environment
+        description: Target AWS environment for the plan-only validation path.
         required: true
         default: sandbox
         type: choice
         options:
           - sandbox
       confirm_deploy:
-        description: Type yes to allow the OIDC deployment validation path
+        description: Type yes to allow the required OIDC validation path.
         required: true
         default: "no"
         type: string
@@ -22,12 +22,19 @@ permissions:
 
 jobs:
   validate-oidc:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'yes' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'sandbox' && inputs.confirm_deploy == 'yes' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: ${{ inputs.environment }}
+    environment: sandbox
 
     steps:
+      - name: Validate repository and environment binding
+        shell: bash
+        run: |
+          test "${GITHUB_REPOSITORY}" = "ilyesHamdiii/sentinelops"
+          test "${{ inputs.environment }}" = "sandbox"
+          test "${{ inputs.confirm_deploy }}" = "yes"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -41,7 +48,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::960577828312:role/sentinelops-github-oidc-deploy
           aws-region: eu-west-1
-          role-session-name: sentinelops-github-actions
+          role-session-name: sentinelops-github-actions-sandbox
 
       - name: Validate AWS identity
         run: aws sts get-caller-identity
@@ -57,10 +64,10 @@ jobs:
         working-directory: infra/terraform
         run: |
           terraform init -backend=false
-          terraform plan -lock=false -input=false
+          terraform plan -lock=false -input=false -no-color
 
-      - name: Stop if deployment is not explicitly approved
-        if: ${{ inputs.confirm_deploy != 'yes' }}
+      - name: Fail closed if validation is not explicitly approved
+        if: ${{ inputs.environment != 'sandbox' || inputs.confirm_deploy != 'yes' }}
         run: |
-          echo "Deployment must be explicitly approved before AWS access is granted."
+          echo "GitHub OIDC validation requires the sandbox environment and an explicit yes approval."
           exit 1

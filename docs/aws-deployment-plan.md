@@ -15,7 +15,7 @@ This plan defines the future controlled sandbox demonstration path for SentinelO
 - Assessment identity: read-only discovery
 - Remediation identity: narrow allowlist
 - Bootstrap identity: setup and teardown only
-- OIDC identity: CI/CD trust path only
+- OIDC identity: GitHub Actions trust path only; the workflow uses `arn:aws:iam::960577828312:role/sentinelops-github-oidc-deploy` and is plan-only
 
 ## Required safeguards
 
@@ -23,6 +23,7 @@ This plan defines the future controlled sandbox demonstration path for SentinelO
 - All resource names and tags must be specific to the sandbox exercise.
 - Cleanup must be validated after each run.
 - Any AWS action sequence must be logged to the evidence ledger.
+- The GitHub environment must be `sandbox` and the trust subject must remain `repo:ilyesHamdiii/sentinelops:environment:sandbox`.
 
 ## Resource inventory
 

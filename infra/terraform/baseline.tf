@@ -723,14 +723,26 @@ data "aws_iam_policy_document" "github_plan_policy" {
       "sts:GetCallerIdentity",
       "s3:GetBucketLocation",
       "s3:ListBucket",
+      "s3:GetBucketAcl",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:GetBucketTagging",
+      "s3:GetObject",
+      "s3:GetObjectVersion",
       "iam:ListPolicies",
       "iam:GetPolicy",
+      "iam:GetPolicyVersion",
       "iam:ListRoles",
       "iam:GetRole",
+      "iam:GetAccountSummary",
       "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSecurityGroupRules",
       "ec2:DescribeVpcs",
       "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:GetLogEvents",
       "cloudtrail:DescribeTrails",
+      "cloudtrail:GetTrailStatus",
+      "cloudtrail:ListTags",
       "budgets:DescribeBudget",
       "budgets:DescribeBudgets",
       "kms:DescribeKey",
@@ -769,27 +781,38 @@ data "aws_iam_policy_document" "github_oidc_apply_role" {
 
 data "aws_iam_policy_document" "github_apply_policy" {
   statement {
-    sid    = "BootstrapApplyPermissions"
+    sid    = "GitHubApplyReservedReadOnly"
     effect = "Allow"
 
     actions = [
+      "sts:GetCallerIdentity",
       "s3:GetBucketLocation",
       "s3:ListBucket",
-      "s3:PutObject",
+      "s3:GetBucketAcl",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:GetBucketTagging",
       "s3:GetObject",
+      "s3:GetObjectVersion",
+      "iam:ListPolicies",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListRoles",
+      "iam:GetRole",
+      "iam:GetAccountSummary",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSecurityGroupRules",
+      "ec2:DescribeVpcs",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:GetLogEvents",
+      "cloudtrail:DescribeTrails",
+      "cloudtrail:GetTrailStatus",
+      "cloudtrail:ListTags",
+      "budgets:DescribeBudget",
+      "budgets:DescribeBudgets",
       "kms:DescribeKey",
-      "kms:GenerateDataKey*",
-      "cloudtrail:CreateTrail",
-      "cloudtrail:UpdateTrail",
-      "cloudtrail:DeleteTrail",
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "iam:CreateRole",
-      "iam:PutRolePolicy",
-      "iam:AttachRolePolicy",
-      "iam:ListRolePolicies",
-      "iam:GetRole"
+      "kms:ListAliases",
+      "kms:ListKeys"
     ]
 
     resources = ["*"]
@@ -806,7 +829,7 @@ resource "aws_iam_role" "github_plan" {
 
 resource "aws_iam_policy" "github_plan" {
   name        = "${var.github_plan_role_name}-policy"
-  description = "Read-only Terraform plan policy for GitHub OIDC execution."
+  description = "Read-only Terraform validation policy for the GitHub OIDC deploy role."
   policy      = data.aws_iam_policy_document.github_plan_policy.json
 }
 
@@ -825,7 +848,7 @@ resource "aws_iam_role" "github_apply" {
 
 resource "aws_iam_policy" "github_apply" {
   name        = "${var.github_apply_role_name}-policy"
-  description = "Restricted Terraform apply policy for GitHub OIDC execution."
+  description = "Reserved read-only GitHub OIDC policy. No write operations are allowed without explicit AWS authorization."
   policy      = data.aws_iam_policy_document.github_apply_policy.json
 }
 

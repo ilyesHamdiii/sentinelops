@@ -44,9 +44,9 @@ variable "budget_notification_email" {
 }
 
 variable "github_repository" {
-  description = "GitHub repository in the form owner/repo for OIDC trust restrictions. Set explicitly without inventing an actual repository name."
+  description = "GitHub repository in the form owner/repo for OIDC trust restrictions."
   type        = string
-  default     = "OWNER/REPO"
+  default     = "ilyesHamdiii/sentinelops"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
@@ -72,14 +72,20 @@ variable "remediation_role_name" {
   default     = "sentinelops-remediation"
 }
 
-variable "github_plan_role_name" {
-  description = "Read-only GitHub OIDC role used for Terraform plan validation."
+variable "github_deploy_role_name" {
+  description = "GitHub OIDC deployment/validation role for the sandbox, restricted to plan-only validation until AWS authorization is granted."
   type        = string
-  default     = "sentinelops-github-oidc-plan"
+  default     = "sentinelops-github-oidc-deploy"
+}
+
+variable "github_plan_role_name" {
+  description = "Backwards-compatible alias for the GitHub OIDC deployment/plan validation role."
+  type        = string
+  default     = "sentinelops-github-oidc-deploy"
 }
 
 variable "github_apply_role_name" {
-  description = "Separate GitHub OIDC role used for restricted apply paths."
+  description = "Reserved future GitHub OIDC apply identity. This remains non-write until explicit AWS authorization and a separate approval process."
   type        = string
   default     = "sentinelops-github-oidc-apply"
 }
