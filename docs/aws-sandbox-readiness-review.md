@@ -33,11 +33,11 @@ The repo is ready for a clean commit after removing local-only generated files a
 
 The project does not currently define an actual AWS IAM policy document in the repo for the assessment or remediation roles. The matrix below therefore reflects the minimum safe design required by the implementation and the security review, and it intentionally rejects any policy that is broad or named-only read-only.
 
-| Role | Purpose | Trust relationship | Allowed actions | Explicitly denied | Notes |
-|---|---|---|---|---|---|
-| Assessment role | read-only discovery and evidence collection | `sts:AssumeRole` only; no root or unrestricted trust; MFA strongly recommended for human session paths | `sts:GetCallerIdentity`, `s3:GetBucketLocation`, `s3:ListBucket`, `s3:GetBucketAcl`, `s3:GetBucketPolicyStatus`, `s3:GetBucketPolicy`, `s3:GetPublicAccessBlock`, `iam:ListRoles`, `iam:GetRole`, `iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`, `iam:ListPolicies`, `iam:GetPolicy`, `iam:GetPolicyVersion`, `ec2:DescribeSecurityGroups`, `ec2:DescribeRegions`, `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `cloudtrail:DescribeTrails`, `cloudtrail:GetTrailStatus` | all `Put*`, `Create*`, `Delete*`, `Update*`, `Modify*`, `Attach*`, `Detach*`, `AssumeRole` outside the approved trust path | Must be read-only by policy; naming alone is not sufficient |
-| Remediation role | allowlisted Azure-style actions for controlled corrections in a sandbox | explicit trust to an approval workflow or designated operator principal; no general `*` admin trust | `s3:PutPublicAccessBlock` scoped to a specific bucket ARN, `ec2:RevokeSecurityGroupIngress` scoped to a specific security group and port, `ec2:AuthorizeSecurityGroupIngress` only for the exact approved change, `iam:CreatePolicyVersion` and `iam:SetDefaultPolicyVersion` only when targeting a specific managed policy ARN, `iam:GetPolicyVersion` and `iam:ListPolicyVersions` for verification | `AdministratorAccess`, `iam:*`, `ec2:*`, `s3:*`, `*:*` | Policy is deliberately narrow and approval-bound; any action not in the allowlist should fail |
-| Bootstrap or Terraform role | infrastructure setup and cleanup in the dedicated sandbox only | root or federated identity with explicit MFA and single-region scope | `s3:*` on the evidence and CloudTrail buckets only, `kms:DescribeKey`, `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey*`, `cloudtrail:CreateTrail`, `cloudtrail:UpdateTrail`, `cloudtrail:DeleteTrail`, `budgets:DescribeBudget`, `logs:CreateLogGroup`, `logs:PutLogEvents` | broad wildcard rights to unrelated accounts or services | Narrow to the bootstrap resources only; no admin role inheritance |
+| Role                        | Purpose                                                                 | Trust relationship                                                                                     | Allowed actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Explicitly denied                                                                                                          | Notes                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Assessment role             | read-only discovery and evidence collection                             | `sts:AssumeRole` only; no root or unrestricted trust; MFA strongly recommended for human session paths | `sts:GetCallerIdentity`, `s3:GetBucketLocation`, `s3:ListBucket`, `s3:GetBucketAcl`, `s3:GetBucketPolicyStatus`, `s3:GetBucketPolicy`, `s3:GetPublicAccessBlock`, `iam:ListRoles`, `iam:GetRole`, `iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`, `iam:ListPolicies`, `iam:GetPolicy`, `iam:GetPolicyVersion`, `ec2:DescribeSecurityGroups`, `ec2:DescribeRegions`, `logs:DescribeLogGroups`, `logs:DescribeLogStreams`, `cloudtrail:DescribeTrails`, `cloudtrail:GetTrailStatus` | all `Put*`, `Create*`, `Delete*`, `Update*`, `Modify*`, `Attach*`, `Detach*`, `AssumeRole` outside the approved trust path | Must be read-only by policy; naming alone is not sufficient                                   |
+| Remediation role            | allowlisted Azure-style actions for controlled corrections in a sandbox | explicit trust to an approval workflow or designated operator principal; no general `*` admin trust    | `s3:PutPublicAccessBlock` scoped to a specific bucket ARN, `ec2:RevokeSecurityGroupIngress` scoped to a specific security group and port, `ec2:AuthorizeSecurityGroupIngress` only for the exact approved change, `iam:CreatePolicyVersion` and `iam:SetDefaultPolicyVersion` only when targeting a specific managed policy ARN, `iam:GetPolicyVersion` and `iam:ListPolicyVersions` for verification                                                                                                          | `AdministratorAccess`, `iam:*`, `ec2:*`, `s3:*`, `*:*`                                                                     | Policy is deliberately narrow and approval-bound; any action not in the allowlist should fail |
+| Bootstrap or Terraform role | infrastructure setup and cleanup in the dedicated sandbox only          | root or federated identity with explicit MFA and single-region scope                                   | `s3:*` on the evidence and CloudTrail buckets only, `kms:DescribeKey`, `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey*`, `cloudtrail:CreateTrail`, `cloudtrail:UpdateTrail`, `cloudtrail:DeleteTrail`, `budgets:DescribeBudget`, `logs:CreateLogGroup`, `logs:PutLogEvents`                                                                                                                                                                                                                                | broad wildcard rights to unrelated accounts or services                                                                    | Narrow to the bootstrap resources only; no admin role inheritance                             |
 
 ### Required design constraints
 
@@ -69,42 +69,42 @@ The Terraform baseline establishes the project’s secure local and sandbox guar
 
 ### Scenario A — insecure S3 configuration
 
-| Item | Details |
-|---|---|
-| Resources created | minimal S3 bucket with public access block disabled or misconfigured, encryption key and bucket policy if intentionally exposed |
+| Item                 | Details                                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resources created    | minimal S3 bucket with public access block disabled or misconfigured, encryption key and bucket policy if intentionally exposed                                     |
 | Required permissions | `s3:GetBucketPublicAccessBlock`, `s3:PutPublicAccessBlock`, `s3:GetBucketAcl`, `s3:PutBucketAcl`, `s3:GetBucketPolicy`, `s3:PutBucketPolicy` on the specific bucket |
-| Expected cost | typically $0.00-$0.50/month for a small test bucket; test-duration cost usually under $0.10 for a short validation |
-| Exposure | bucket allows anonymous reads or a permissive policy; public data disclosure risk |
-| Detection method | collector checks bucket policy, public access block, and public read permissions |
-| Remediation method | `s3:PutPublicAccessBlock` with `BlockPublicAcls=true`, `IgnorePublicAcls=true`, `BlockPublicPolicy=true`, `RestrictPublicBuckets=true` |
-| Verification method | fetch bucket public access block and policy after the change; confirm there are no public grants |
-| Cleanup procedure | delete the bucket or remove the synthetic public policy; confirm zero remaining public exposure |
+| Expected cost        | typically $0.00-$0.50/month for a small test bucket; test-duration cost usually under $0.10 for a short validation                                                  |
+| Exposure             | bucket allows anonymous reads or a permissive policy; public data disclosure risk                                                                                   |
+| Detection method     | collector checks bucket policy, public access block, and public read permissions                                                                                    |
+| Remediation method   | `s3:PutPublicAccessBlock` with `BlockPublicAcls=true`, `IgnorePublicAcls=true`, `BlockPublicPolicy=true`, `RestrictPublicBuckets=true`                              |
+| Verification method  | fetch bucket public access block and policy after the change; confirm there are no public grants                                                                    |
+| Cleanup procedure    | delete the bucket or remove the synthetic public policy; confirm zero remaining public exposure                                                                     |
 
 ### Scenario B — IAM wildcard access
 
-| Item | Details |
-|---|---|
-| Resources created | minimal IAM managed policy or role with `Action: "*"` or `iam:*` |
+| Item                 | Details                                                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resources created    | minimal IAM managed policy or role with `Action: "*"` or `iam:*`                                                                                |
 | Required permissions | `iam:ListPolicies`, `iam:GetPolicy`, `iam:GetPolicyVersion`, `iam:ListPolicyVersions`, `iam:CreatePolicyVersion`, `iam:SetDefaultPolicyVersion` |
-| Expected cost | $0.00/month because IAM policy objects are free; test-duration cost is negligible |
-| Exposure | unrestricted access potential across the account |
-| Detection method | policy document inspection in the collector and the risk engine |
-| Remediation method | replace the wildcard policy with a scoped statement or remove the policy entirely if not needed |
-| Verification method | read back the corrected policy version and compare action scope |
-| Cleanup procedure | delete the test policy or revert to the least-privilege policy |
+| Expected cost        | $0.00/month because IAM policy objects are free; test-duration cost is negligible                                                               |
+| Exposure             | unrestricted access potential across the account                                                                                                |
+| Detection method     | policy document inspection in the collector and the risk engine                                                                                 |
+| Remediation method   | detection-only review of wildcard statements; no automated inline-policy deletion is allowed because it can remove legitimate permissions |
+| Verification method  | read back the corrected policy version and compare action scope                                                                                 |
+| Cleanup procedure    | delete the test policy or revert to the least-privilege policy                                                                                  |
 
 ### Scenario C — public administrative-port ingress
 
-| Item | Details |
-|---|---|
-| Resources created | one security group with inbound rule allowing `22/TCP` or `3389/TCP` from `0.0.0.0/0` and optionally a lightweight EC2 instance for validation |
-| Required permissions | `ec2:DescribeSecurityGroups`, `ec2:AuthorizeSecurityGroupIngress`, `ec2:RevokeSecurityGroupIngress`, optional `ec2:DescribeInstances` |
-| Expected cost | if the EC2 instance is left running for a test cycle, roughly $0.10-$1.00 for a short window using a tiny instance; if SG only is created, the cost is usually $0.00 |
-| Exposure | internet-exposed admin port is a high-risk access path |
-| Detection method | the security group collector inspects ingress rules and the scenario engine checks 0.0.0.0/0 on admin ports |
-| Remediation method | `ec2:RevokeSecurityGroupIngress` for the public 22 or 3389 rule; add a restricted CIDR only if required |
-| Verification method | read the security group after remediation and confirm the public ingress rule is removed |
-| Cleanup procedure | remove the security group or instance and verify the rule is no longer present |
+| Item                 | Details                                                                                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resources created    | one security group with inbound rule allowing `22/TCP` or `3389/TCP` from `0.0.0.0/0` and optionally a lightweight EC2 instance for validation                       |
+| Required permissions | `ec2:DescribeSecurityGroups`, `ec2:AuthorizeSecurityGroupIngress`, `ec2:RevokeSecurityGroupIngress`, optional `ec2:DescribeInstances`                                |
+| Expected cost        | if the EC2 instance is left running for a test cycle, roughly $0.10-$1.00 for a short window using a tiny instance; if SG only is created, the cost is usually $0.00 |
+| Exposure             | internet-exposed admin port is a high-risk access path                                                                                                               |
+| Detection method     | the security group collector inspects ingress rules and the scenario engine checks 0.0.0.0/0 on admin ports                                                          |
+| Remediation method   | `ec2:RevokeSecurityGroupIngress` for the public 22 or 3389 rule; add a restricted CIDR only if required                                                              |
+| Verification method  | read the security group after remediation and confirm the public ingress rule is removed                                                                             |
+| Cleanup procedure    | remove the security group or instance and verify the rule is no longer present                                                                                       |
 
 ### Cost and risk posture
 
@@ -141,14 +141,14 @@ The remaining requirement is to ensure the role trust policy is pinned to the ex
 
 ## 7. Cost estimate and assumptions
 
-| Item | Quantity | Estimated unit cost | Estimated test-duration cost | Notes |
-|---|---|---:|---:|---|
-| S3 bucket for evidence or a public test bucket | 1-2 buckets | $0.00-$0.20/month | $0.00-$0.10 | minimal storage and API usage |
-| CloudTrail baseline | 1 trail | $0.00-$1.00/month | $0.00-$0.20 | only if required by the sandbox baseline |
-| IAM policy objects | 1-3 policies | $0.00 | $0.00 | IAM config objects do not consume significant monthly spend |
-| EC2 instance for the public admin-port scenario | 1 small instance for a test window | $0.10-$1.00/hour if left running | $0.10-$1.00 | must be terminated immediately after validation |
-| KMS key | 1 key | $0.00-$0.10/month | negligible | used for encrypted evidence storage |
-| Monthly budget guardrail | 1 | n/a | n/a | keep a hard ceiling at $15.00 |
+| Item                                            | Quantity                           |              Estimated unit cost | Estimated test-duration cost | Notes                                                       |
+| ----------------------------------------------- | ---------------------------------- | -------------------------------: | ---------------------------: | ----------------------------------------------------------- |
+| S3 bucket for evidence or a public test bucket  | 1-2 buckets                        |                $0.00-$0.20/month |                  $0.00-$0.10 | minimal storage and API usage                               |
+| CloudTrail baseline                             | 1 trail                            |                $0.00-$1.00/month |                  $0.00-$0.20 | only if required by the sandbox baseline                    |
+| IAM policy objects                              | 1-3 policies                       |                            $0.00 |                        $0.00 | IAM config objects do not consume significant monthly spend |
+| EC2 instance for the public admin-port scenario | 1 small instance for a test window | $0.10-$1.00/hour if left running |                  $0.10-$1.00 | must be terminated immediately after validation             |
+| KMS key                                         | 1 key                              |                $0.00-$0.10/month |                   negligible | used for encrypted evidence storage                         |
+| Monthly budget guardrail                        | 1                                  |                              n/a |                          n/a | keep a hard ceiling at $15.00                               |
 
 ### Assumptions
 

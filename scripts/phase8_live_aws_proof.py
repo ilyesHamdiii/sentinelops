@@ -1,9 +1,10 @@
-"""Phase 8 live AWS validation for SentinelOps in the dedicated eu-west-1 sandbox.
+"""Phase 8 live AWS validation for SentinelOps in a dedicated sandbox.
 
-This script creates a minimal set of intentionally insecure test resources,
-validates them using the canonical Scenario engine, and then cleans them up
-immediately. It is designed for the dedicated sandbox account only and keeps
-all actions narrowly scoped and tagged for easy audit.
+This script is intentionally non-executing by default. It refuses to create
+insecure resources unless a human operator has explicitly enabled the live-demo
+flow and the execution context matches the approved AWS sandbox account and
+region. This preserves the repository's no-deploy constraint while making the
+proof script safe by construction.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 import os
 import random
 import string
+import sys
 from typing import Any
 
 import boto3
@@ -20,10 +22,57 @@ from sentinelops.scenarios import evaluate_scenario
 
 REGION = "eu-west-1"
 PROJECT_TAG = {"Project": "sentinelops", "Environment": "sandbox", "Purpose": "phase8-live-proof"}
+BOOTSTRAP_ROLE_NAME = "sentinelops-bootstrap"
 
 
 def _random_suffix(length: int = 8) -> str:
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
+
+def _read_bool(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_allowed_account_ids(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    ids = {item.strip() for item in value.split(",") if item.strip()}
+    valid = {item for item in ids if len(item) == 12 and item.isdigit()}
+    return valid
+
+
+def _require_live_demo_guardrails() -> dict[str, str]:
+    allow_demo = _read_bool(os.environ.get("SENTINELOPS_ENABLE_LIVE_DEMO"))
+    approve_demo = _read_bool(os.environ.get("SENTINELOPS_APPROVE_LIVE_DEMO"))
+    allowed_accounts = _parse_allowed_account_ids(os.environ.get("SENTINELOPS_ALLOWED_ACCOUNT_IDS"))
+    region = (os.environ.get("SENTINELOPS_TEST_REGION") or REGION).strip()
+    environment = (os.environ.get("SENTINELOPS_TEST_ENVIRONMENT") or "").strip()
+    vpc_id = (os.environ.get("SENTINELOPS_TEST_VPC_ID") or "").strip()
+    bootstrap_name = (os.environ.get("SENTINELOPS_BOOTSTRAP_ROLE_NAME") or BOOTSTRAP_ROLE_NAME).strip()
+
+    if not allow_demo:
+        raise RuntimeError("Live AWS demo is disabled by default; set SENTINELOPS_ENABLE_LIVE_DEMO=true.")
+    if not approve_demo:
+        raise RuntimeError("Explicit operator approval is required; set SENTINELOPS_APPROVE_LIVE_DEMO=true.")
+    if not allowed_accounts:
+        raise RuntimeError("No allowed AWS account IDs were provided; set SENTINELOPS_ALLOWED_ACCOUNT_IDS.")
+    if region not in {"eu-west-1"}:
+        raise RuntimeError("Only the eu-west-1 sandbox region is permitted for this script.")
+    if not environment:
+        raise RuntimeError("SENTINELOPS_TEST_ENVIRONMENT is required; the default VPC is not acceptable as an implicit boundary.")
+    if environment.lower() == "default":
+        raise RuntimeError("The default VPC is not an allowed test boundary; provide an explicitly identified test environment or VPC.")
+    if not vpc_id:
+        raise RuntimeError("SENTINELOPS_TEST_VPC_ID is required. Do not use the default VPC implicitly.")
+    if not bootstrap_name:
+        raise RuntimeError("The dedicated bootstrap role name is required for provisioning.")
+
+    return {
+        "region": region,
+        "environment": environment,
+        "vpc_id": vpc_id,
+        "bootstrap_role_name": bootstrap_name,
+    }
 
 
 def _ensure_tagged(resource: dict[str, Any]) -> dict[str, Any]:
@@ -31,6 +80,23 @@ def _ensure_tagged(resource: dict[str, Any]) -> dict[str, Any]:
     existing = {tag.get("Key"): tag.get("Value") for tag in tags if isinstance(tag, dict)}
     merged = {**existing, **PROJECT_TAG}
     return [{"Key": key, "Value": value} for key, value in merged.items()]
+
+
+def _validate_bootstrap_identity(session: Any, allowed_accounts: set[str], expected_role_name: str) -> dict[str, str]:
+    identity = session.client("sts").get_caller_identity()
+    account_id = str(identity.get("Account") or "").strip()
+    arn = str(identity.get("Arn") or "").strip()
+    if not account_id or not arn:
+        raise RuntimeError("AWS identity could not be verified; refusing to execute the live proof script.")
+    if account_id not in allowed_accounts:
+        raise RuntimeError(f"Account '{account_id}' is not in the explicit allowlist: {sorted(allowed_accounts)}")
+    lower_arn = arn.lower()
+    if expected_role_name.lower() not in lower_arn and f"role/{expected_role_name}" not in lower_arn:
+        raise RuntimeError(
+            f"Caller '{arn}' is not using the dedicated bootstrap identity '{expected_role_name}'. "
+            "Refusing to create vulnerable resources."
+        )
+    return {"account_id": account_id, "arn": arn}
 
 
 def _create_s3_public_bucket(client: Any, bucket_name: str) -> dict[str, Any]:
@@ -75,7 +141,7 @@ def _cleanup_s3_bucket(client: Any, bucket_name: str) -> None:
             for marker in delete_markers:
                 client.delete_object(Bucket=bucket_name, Key=marker["Key"], VersionId=marker["VersionId"])
         client.delete_bucket(Bucket=bucket_name)
-    except client.exceptions.ClientError:
+    except Exception:
         pass
 
 
@@ -151,111 +217,104 @@ def _cleanup_security_group(ec2: Any, group_id: str) -> None:
 
 
 def _get_default_vpc_id(ec2: Any) -> str:
-    vpcs = ec2.describe_vpcs()
-    for vpc in vpcs.get("Vpcs", []):
-        if vpc.get("IsDefault"):
-            return vpc["VpcId"]
-    raise RuntimeError("No default VPC found in the sandbox account.")
+    raise RuntimeError("The default VPC is not allowed for live validation. Use SENTINELOPS_TEST_VPC_ID to specify an explicit test environment.")
 
 
-def main() -> None:
-    session = boto3.Session(region_name=REGION)
-    account_id = session.client("sts").get_caller_identity()["Account"]
-    print(f"Sandbox account: {account_id} | region: {REGION}")
-
-    suffix = _random_suffix()
-    bucket_name = f"sentinelops-phase8-{suffix}"
-    role_name = f"sentinelops-phase8-role-{suffix}"
-    policy_name = f"sentinelops-phase8-policy-{suffix}"
-    sg_name = f"sentinelops-phase8-sg-{suffix}"
-
-    s3 = session.client("s3", region_name=REGION)
-    iam = session.client("iam", region_name=REGION)
-    ec2 = session.client("ec2", region_name=REGION)
-
-    created: list[dict[str, Any]] = []
+def main() -> int:
     try:
-        bucket = _create_s3_public_bucket(s3, bucket_name)
-        created.append({"kind": "s3", "name": bucket_name, "payload": bucket})
-        print("[S1] Created public S3 bucket:", bucket_name)
+        guardrails = _require_live_demo_guardrails()
+        allowed_accounts = _parse_allowed_account_ids(os.environ.get("SENTINELOPS_ALLOWED_ACCOUNT_IDS"))
+        if not allowed_accounts:
+            raise RuntimeError("No account IDs were allowlisted.")
 
-        role = _create_iam_wildcard_role(iam, role_name, policy_name)
-        created.append({"kind": "iam", "name": role_name, "payload": role})
-        print("[S2] Created wildcard IAM policy and role:", role_name)
+        session = boto3.Session(region_name=guardrails["region"])
+        identity = _validate_bootstrap_identity(session, allowed_accounts, guardrails["bootstrap_role_name"])
+        account_id = identity["account_id"]
+        print(f"Bootstrap account: {account_id} | role: {identity['arn']} | region: {guardrails['region']} | environment: {guardrails['environment']} | vpc: {guardrails['vpc_id']}")
 
-        vpc_id = _get_default_vpc_id(ec2)
-        security_group = _create_insecure_security_group(ec2, vpc_id, sg_name)
-        created.append({"kind": "sg", "name": sg_name, "payload": security_group})
-        print("[S3] Created public security group:", sg_name)
+        suffix = _random_suffix()
+        bucket_name = f"sentinelops-phase8-{guardrails['environment']}-{suffix}"
+        role_name = f"sentinelops-phase8-role-{suffix}"
+        policy_name = f"sentinelops-phase8-policy-{suffix}"
+        sg_name = f"sentinelops-phase8-sg-{suffix}"
 
-        s1 = evaluate_scenario("S1", {
-            "bucket_name": bucket_name,
-            "public_access_block": bucket["public_access_block"],
-            "bucket_policy": {"Statement": [{
+        s3 = session.client("s3", region_name=guardrails["region"])
+        iam = session.client("iam", region_name=guardrails["region"])
+        ec2 = session.client("ec2", region_name=guardrails["region"])
+
+        created: list[dict[str, Any]] = []
+        try:
+            bucket = _create_s3_public_bucket(s3, bucket_name)
+            created.append({"kind": "s3", "name": bucket_name, "payload": bucket})
+            print("[S1] Created public S3 bucket:", bucket_name)
+
+            role = _create_iam_wildcard_role(iam, role_name, policy_name)
+            created.append({"kind": "iam", "name": role_name, "payload": role})
+            print("[S2] Created wildcard IAM policy and role:", role_name)
+
+            security_group = _create_insecure_security_group(ec2, guardrails["vpc_id"], sg_name)
+            created.append({"kind": "sg", "name": sg_name, "payload": security_group})
+            print("[S3] Created public security group:", sg_name)
+
+            s1 = evaluate_scenario("S1", {
+                "bucket_name": bucket_name,
+                "public_access_block": bucket["public_access_block"],
+                "bucket_policy": {"Statement": [{
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": f"arn:aws:s3:::{bucket_name}/*",
+                }]},
+            })
+            s2 = evaluate_scenario("S2", {"policy_statements": [{
                 "Effect": "Allow",
-                "Principal": "*",
-                "Action": "s3:GetObject",
-                "Resource": f"arn:aws:s3:::{bucket_name}/*",
-            }]},
-        })
-        s2 = evaluate_scenario("S2", {"policy_statements": [{
-            "Effect": "Allow",
-            "Action": "*",
-            "Resource": "*",
-        }]})
-        s3_result = evaluate_scenario("S3", {"ingress": [{
-            "IpProtocol": "tcp",
-            "FromPort": 22,
-            "ToPort": 22,
-            "CidrIp": "0.0.0.0/0",
-        }]})
+                "Action": "*",
+                "Resource": "*",
+            }]})
+            s3_result = evaluate_scenario("S3", {"ingress": [{
+                "IpProtocol": "tcp",
+                "FromPort": 22,
+                "ToPort": 22,
+                "CidrIp": "0.0.0.0/0",
+            }]})
 
-        print("[S1] Result:", s1)
-        print("[S2] Result:", s2)
-        print("[S3] Result:", s3_result)
+            print("[S1] Result:", s1)
+            print("[S2] Result:", s2)
+            print("[S3] Result:", s3_result)
 
-        assert s1["status"] == "finding_detected"
-        assert s2["status"] == "finding_detected"
-        assert s3_result["status"] == "finding_detected"
+            assert s1["status"] == "finding_detected"
+            assert s2["status"] == "finding_detected"
+            assert s3_result["status"] == "finding_detected"
 
-        print("Live Phase 8 validation succeeded in eu-west-1 for S1, S2, and S3.")
-    finally:
-        print("Beginning teardown...")
-        for item in reversed(created):
-            kind = item["kind"]
-            name = item["name"]
-            if kind == "s3":
-                _cleanup_s3_bucket(s3, name)
-                print(f"[teardown] S3 bucket deleted: {name}")
-            elif kind == "iam":
-                _cleanup_iam(iam, name, item["payload"]["policy_name"])
-                print(f"[teardown] IAM role and policy deleted: {name}")
-            elif kind == "sg":
-                _cleanup_security_group(ec2, item["payload"]["group_id"])
-                print(f"[teardown] Security group deleted: {name}")
+            print("Live Phase 8 validation succeeded in the explicit sandbox environment.")
+            return 0
+        finally:
+            print("Beginning teardown...")
+            cleanup_errors: list[str] = []
+            for item in reversed(created):
+                kind = item["kind"]
+                name = item["name"]
+                try:
+                    if kind == "s3":
+                        _cleanup_s3_bucket(s3, name)
+                        print(f"[teardown] S3 bucket deleted: {name}")
+                    elif kind == "iam":
+                        _cleanup_iam(iam, name, item["payload"]["policy_name"])
+                        print(f"[teardown] IAM role and policy deleted: {name}")
+                    elif kind == "sg":
+                        _cleanup_security_group(ec2, item["payload"]["group_id"])
+                        print(f"[teardown] Security group deleted: {name}")
+                except Exception as exc:  # pragma: no cover - defensive path in live execution only
+                    cleanup_errors.append(f"{kind}:{name}:{exc}")
 
-        try:
-            s3.head_bucket(Bucket=bucket_name)
-            raise AssertionError("S3 bucket still exists after teardown.")
-        except Exception:
-            pass
-
-        try:
-            iam.get_role(RoleName=role_name)
-            raise AssertionError("IAM role still exists after teardown.")
-        except Exception:
-            pass
-
-        try:
-            ec2.describe_security_groups(GroupIds=[next(item["payload"]["group_id"] for item in created if item["kind"] == "sg")])
-            raise AssertionError("Security group still exists after teardown.")
-        except Exception:
-            pass
-
-        print("Teardown verification passed: all sandbox resources were cleaned up.")
+            if cleanup_errors:
+                raise RuntimeError("Cleanup did not complete for all script-created resources: " + "; ".join(cleanup_errors))
+    except RuntimeError as exc:
+        print(f"Live AWS proof refused: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
     os.environ.setdefault("AWS_DEFAULT_REGION", REGION)
     os.environ.setdefault("AWS_REGION", REGION)
-    main()
+    raise SystemExit(main())

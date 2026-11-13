@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "bootstrap_policy" {
       "s3:ListBucket",
       "s3:GetBucketAcl",
       "s3:PutBucketAcl",
-      "s3:PutBucketPublicAccessBlock",
+      "s3:PutPublicAccessBlock",
       "s3:PutBucketVersioning",
       "s3:PutEncryptionConfiguration"
     ]
@@ -182,8 +182,8 @@ data "aws_iam_policy_document" "evidence_kms" {
 resource "aws_kms_key" "evidence" {
   description             = "KMS key for SentinelOps evidence and operational data in the ${var.environment} sandbox."
   deletion_window_in_days = 10
-  enable_key_rotation    = true
-  policy                 = data.aws_iam_policy_document.evidence_kms.json
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.evidence_kms.json
 
   tags = local.default_tags
 }
@@ -330,13 +330,13 @@ data "aws_iam_policy_document" "cloudtrail_bucket_policy" {
       identifiers = ["cloudtrail.amazonaws.com"]
     }
 
-    actions = ["s3:GetBucketAcl"]
+    actions   = ["s3:GetBucketAcl"]
     resources = [aws_s3_bucket.cloudtrail.arn]
 
     condition {
       test     = "StringEquals"
       variable = "aws:SourceArn"
-      values = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.cloudtrail_name}"]
+      values   = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.cloudtrail_name}"]
     }
   }
 
@@ -349,7 +349,7 @@ data "aws_iam_policy_document" "cloudtrail_bucket_policy" {
       identifiers = ["cloudtrail.amazonaws.com"]
     }
 
-    actions = ["s3:PutObject"]
+    actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${local.account_id}/*"]
 
     condition {
@@ -361,7 +361,7 @@ data "aws_iam_policy_document" "cloudtrail_bucket_policy" {
     condition {
       test     = "StringEquals"
       variable = "aws:SourceArn"
-      values = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.cloudtrail_name}"]
+      values   = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/${local.cloudtrail_name}"]
     }
   }
 }
@@ -415,6 +415,217 @@ resource "aws_dynamodb_table" "terraform_locks" {
   })
 }
 
+data "aws_iam_policy_document" "assessment_role" {
+  statement {
+    sid     = "AllowAssumeRoleFromSandboxAccountRoot"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:MultiFactorAuthPresent"
+      values   = ["true"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "assessment_policy" {
+  statement {
+    sid    = "S3ReadOnlyEvidence"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:GetBucketAcl",
+      "s3:GetBucketPublicAccessBlock",
+      "s3:GetBucketTagging",
+      "s3:GetObject",
+      "s3:GetObjectVersion"
+    ]
+
+    resources = [
+      aws_s3_bucket.evidence.arn,
+      aws_s3_bucket.cloudtrail.arn,
+      "${aws_s3_bucket.evidence.arn}/*",
+      "${aws_s3_bucket.cloudtrail.arn}/*"
+    ]
+  }
+
+  statement {
+    sid    = "IAMReadOnlyMetadata"
+    effect = "Allow"
+
+    actions = [
+      "iam:ListRoles",
+      "iam:GetRole",
+      "iam:ListRolePolicies",
+      "iam:GetRolePolicy",
+      "iam:ListPolicies",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:GetAccountSummary"
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "DescribeSecurityGroups"
+    effect = "Allow"
+
+    actions = [
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeSecurityGroupRules",
+      "ec2:DescribeVpcs"
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "CloudTrailReadOnly"
+    effect = "Allow"
+
+    actions = [
+      "cloudtrail:DescribeTrails",
+      "cloudtrail:GetTrailStatus",
+      "cloudtrail:ListTags"
+    ]
+
+    resources = ["arn:aws:cloudtrail:${var.aws_region}:${local.account_id}:trail/*"]
+  }
+
+  statement {
+    sid    = "LogsReadOnly"
+    effect = "Allow"
+
+    actions = [
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:GetLogEvents"
+    ]
+
+    resources = ["arn:aws:logs:${var.aws_region}:${local.account_id}:log-group:*"]
+  }
+
+  statement {
+    sid    = "KMSReadOnly"
+    effect = "Allow"
+
+    actions = [
+      "kms:DescribeKey",
+      "kms:ListAliases",
+      "kms:ListKeys"
+    ]
+
+    resources = [aws_kms_key.evidence.arn]
+  }
+
+  statement {
+    sid    = "BudgetReadOnly"
+    effect = "Allow"
+
+    actions = [
+      "budgets:DescribeBudget",
+      "budgets:DescribeBudgets"
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "IdentityReadOnly"
+    effect = "Allow"
+
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "remediation_role" {
+  statement {
+    sid     = "AllowAssumeRoleFromSandboxAccountRoot"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:MultiFactorAuthPresent"
+      values   = ["true"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "remediation_policy" {
+  statement {
+    sid    = "ScopedS3PublicAccessRemediation"
+    effect = "Allow"
+
+    actions = ["s3:PutPublicAccessBlock"]
+
+    resources = [
+      aws_s3_bucket.evidence.arn,
+      aws_s3_bucket.cloudtrail.arn
+    ]
+  }
+
+  statement {
+    sid    = "ScopedSecurityGroupIngressRemediation"
+    effect = "Allow"
+
+    actions = [
+      "ec2:DescribeSecurityGroups",
+      "ec2:AuthorizeSecurityGroupIngress",
+      "ec2:RevokeSecurityGroupIngress"
+    ]
+
+    resources = ["arn:aws:ec2:${var.aws_region}:${local.account_id}:security-group/*"]
+  }
+
+  statement {
+    sid    = "DetectWildcardIamPolicies"
+    effect = "Allow"
+
+    actions = [
+      "iam:GetRolePolicy",
+      "iam:ListRolePolicies"
+    ]
+
+    resources = ["arn:aws:iam::${local.account_id}:role/sentinelops-*"]
+  }
+
+  statement {
+    sid    = "DenyPrivilegeEscalation"
+    effect = "Deny"
+
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:CreatePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:SetDefaultPolicyVersion",
+      "iam:PassRole",
+      "iam:UpdateAssumeRolePolicy",
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:AssumeRoleWithSAML"
+    ]
+
+    resources = ["*"]
+  }
+}
+
 resource "aws_iam_role" "bootstrap" {
   name = local.bootstrap_role
 
@@ -434,6 +645,195 @@ resource "aws_iam_role_policy_attachment" "bootstrap" {
   policy_arn = aws_iam_policy.bootstrap.arn
 }
 
+resource "aws_iam_role" "assessment" {
+  name = var.assessment_role_name
+
+  assume_role_policy = data.aws_iam_policy_document.assessment_role.json
+
+  tags = local.default_tags
+}
+
+resource "aws_iam_policy" "assessment" {
+  name        = "${var.assessment_role_name}-policy"
+  description = "Read-only evidence collection policy for SentinelOps assessment workflows."
+  policy      = data.aws_iam_policy_document.assessment_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "assessment" {
+  role       = aws_iam_role.assessment.name
+  policy_arn = aws_iam_policy.assessment.arn
+}
+
+resource "aws_iam_role" "remediation" {
+  name = var.remediation_role_name
+
+  assume_role_policy = data.aws_iam_policy_document.remediation_role.json
+
+  tags = local.default_tags
+}
+
+resource "aws_iam_policy" "remediation" {
+  name        = "${var.remediation_role_name}-policy"
+  description = "Allowlisted only for the SentinelOps remediation actions that are explicitly approved by the application workflow."
+  policy      = data.aws_iam_policy_document.remediation_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "remediation" {
+  role       = aws_iam_role.remediation.name
+  policy_arn = aws_iam_policy.remediation.arn
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+data "aws_iam_policy_document" "github_oidc_plan_role" {
+  statement {
+    sid     = "AllowGithubActionsAssumeRoleWithWebIdentity"
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository}:environment:${var.github_environment}"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "github_plan_policy" {
+  statement {
+    sid    = "PlanReadOnlyIdentity"
+    effect = "Allow"
+
+    actions = [
+      "sts:GetCallerIdentity",
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "iam:ListPolicies",
+      "iam:GetPolicy",
+      "iam:ListRoles",
+      "iam:GetRole",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeVpcs",
+      "logs:DescribeLogGroups",
+      "cloudtrail:DescribeTrails",
+      "budgets:DescribeBudget",
+      "budgets:DescribeBudgets",
+      "kms:DescribeKey",
+      "kms:ListAliases",
+      "kms:ListKeys"
+    ]
+
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "github_oidc_apply_role" {
+  statement {
+    sid     = "AllowGithubActionsAssumeRoleWithWebIdentity"
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository}:environment:${var.github_environment}"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "github_apply_policy" {
+  statement {
+    sid    = "BootstrapApplyPermissions"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetBucketLocation",
+      "s3:ListBucket",
+      "s3:PutObject",
+      "s3:GetObject",
+      "kms:DescribeKey",
+      "kms:GenerateDataKey*",
+      "cloudtrail:CreateTrail",
+      "cloudtrail:UpdateTrail",
+      "cloudtrail:DeleteTrail",
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+      "iam:CreateRole",
+      "iam:PutRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:ListRolePolicies",
+      "iam:GetRole"
+    ]
+
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role" "github_plan" {
+  name = var.github_plan_role_name
+
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_plan_role.json
+
+  tags = local.default_tags
+}
+
+resource "aws_iam_policy" "github_plan" {
+  name        = "${var.github_plan_role_name}-policy"
+  description = "Read-only Terraform plan policy for GitHub OIDC execution."
+  policy      = data.aws_iam_policy_document.github_plan_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "github_plan" {
+  role       = aws_iam_role.github_plan.name
+  policy_arn = aws_iam_policy.github_plan.arn
+}
+
+resource "aws_iam_role" "github_apply" {
+  name = var.github_apply_role_name
+
+  assume_role_policy = data.aws_iam_policy_document.github_oidc_apply_role.json
+
+  tags = local.default_tags
+}
+
+resource "aws_iam_policy" "github_apply" {
+  name        = "${var.github_apply_role_name}-policy"
+  description = "Restricted Terraform apply policy for GitHub OIDC execution."
+  policy      = data.aws_iam_policy_document.github_apply_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "github_apply" {
+  role       = aws_iam_role.github_apply.name
+  policy_arn = aws_iam_policy.github_apply.arn
+}
+
 resource "aws_budgets_budget" "sandbox" {
   name              = "${var.project}-${var.environment}-monthly-budget"
   budget_type       = "COST"
@@ -443,36 +843,36 @@ resource "aws_budgets_budget" "sandbox" {
   time_period_start = formatdate("YYYY-MM-01_00:00", timestamp())
 
   cost_types {
-    include_tax                  = false
-    include_subscription         = true
-    include_support              = true
-    include_upfront             = false
-    include_recurring           = true
-    include_other_subscription  = false
+    include_tax                = false
+    include_subscription       = true
+    include_support            = true
+    include_upfront            = false
+    include_recurring          = true
+    include_other_subscription = false
     use_blended                = false
   }
 
   notification {
-    comparison_operator = "GREATER_THAN"
-    threshold           = 50
-    threshold_type      = "PERCENTAGE"
-    notification_type   = "ACTUAL"
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 50
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.budget_notification_email]
   }
 
   notification {
-    comparison_operator = "GREATER_THAN"
-    threshold           = 80
-    threshold_type      = "PERCENTAGE"
-    notification_type   = "ACTUAL"
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.budget_notification_email]
   }
 
   notification {
-    comparison_operator = "GREATER_THAN"
-    threshold           = 100
-    threshold_type      = "PERCENTAGE"
-    notification_type   = "ACTUAL"
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.budget_notification_email]
   }
 }

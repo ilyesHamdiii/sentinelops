@@ -19,7 +19,6 @@ from sentinelops.collectors.aws import (
     collect_security_group_assets,
 )
 from sentinelops.remediation import ApprovedRemediationAction, approve_remediation, execute_remediation
-from sentinelops.reporting.reporting import sanitize_payload
 from sentinelops.risk import evaluate_risk_for_findings
 from sentinelops.scenarios import evaluate_scenario
 

@@ -18,6 +18,7 @@ htmlcov/
 *.tmp
 *.sqlite3
 *.db
+.sentinelops/
 pip-audit-report.json
 report*.json
 reports/

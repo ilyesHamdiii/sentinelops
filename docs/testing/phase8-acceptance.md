@@ -27,6 +27,12 @@ Validate the local scenario catalog before any live AWS scenario execution is ap
 - The test system is deterministic for repeated runs.
 - The validation contract is strict enough to detect mismatched scenario outcomes before real execution.
 
+### 5. IAM wildcard handling
+
+- IAM wildcard findings are detected and reported without allowing automatic deletion of an inline policy.
+- The remediation role does not permit `iam:DeleteRolePolicy`.
+- Mixed policies containing both excessive wildcard permissions and legitimate permissions are explicitly treated as a routine manual review case.
+
 ## Pass/fail outcome
 
 The phase passes when the six scenario definitions and expected outcomes behave deterministically in a local, read-only environment and are ready for a future approval-gated AWS test run.

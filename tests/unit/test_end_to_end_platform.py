@@ -376,16 +376,18 @@ def test_remediation_pipeline_enforces_approval_and_verifies_post_change_state()
     assert post_fix["status"] == "no_finding_detected"
 
     workflow = RemediationWorkflow()
+    replay_target = "arn:aws:s3:::public-bucket-replay-check"
+    replay_reason = "Restrict public bucket access again after the replay validation check."
     approval_again = workflow.create_approval(
         action=action,
-        target=target,
-        reason=reason,
+        target=replay_target,
+        reason=replay_reason,
     )
     first = workflow.execute(
         approval=approval_again,
         action=action,
-        target=target,
-        reason=reason,
+        target=replay_target,
+        reason=replay_reason,
         before_state={"public_access_block": False},
         after_state={"public_access_block": True},
         verification_passed=True,
@@ -393,8 +395,8 @@ def test_remediation_pipeline_enforces_approval_and_verifies_post_change_state()
     second = workflow.execute(
         approval=approval_again,
         action=action,
-        target=target,
-        reason=reason,
+        target=replay_target,
+        reason=replay_reason,
         before_state={"public_access_block": False},
         after_state={"public_access_block": True},
         verification_passed=True,

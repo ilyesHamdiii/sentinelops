@@ -58,6 +58,26 @@ output "bootstrap_role_arn" {
   value       = aws_iam_role.bootstrap.arn
 }
 
+output "assessment_role_arn" {
+  description = "ARN of the read-only SentinelOps assessment role."
+  value       = aws_iam_role.assessment.arn
+}
+
+output "remediation_role_arn" {
+  description = "ARN of the allowlisted SentinelOps remediation role."
+  value       = aws_iam_role.remediation.arn
+}
+
+output "github_plan_role_arn" {
+  description = "ARN of the GitHub OIDC role restricted to Terraform plan validation."
+  value       = aws_iam_role.github_plan.arn
+}
+
+output "github_apply_role_arn" {
+  description = "ARN of the GitHub OIDC role restricted to controlled apply actions."
+  value       = aws_iam_role.github_apply.arn
+}
+
 output "findings_table_name" {
   description = "DynamoDB table used to persist normalized SentinelOps findings."
   value       = aws_dynamodb_table.findings.name
